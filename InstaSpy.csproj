@@ -6,14 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Properties\**" />
-    <EmbeddedResource Remove="Properties\**" />
-    <None Remove="Properties\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Kit.Http" Version="1.0.0" />
-    <PackageReference Include="Kit.Mail" Version="1.0.0" />
+    <PackageReference Include="Kit.Http" Version="1.0.1" />
+    <PackageReference Include="Kit.Mail" Version="1.0.1" />
   </ItemGroup>
 
 </Project>
