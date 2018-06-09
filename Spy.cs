@@ -45,7 +45,7 @@ namespace InstaSpy
 
         private void Work()
         {
-            LogService.LogInfo($"{++_counter}");
+            LogService.LogInfo($"Step {++_counter}");
             var mainHtml = LoginAndGetMailHtml();
             var dataUrl = MainUrl + Regex.Match(mainHtml, @"(?<=""preload"" href=""/)[^""]+(?="" as=)").Value;
             var data = _http.GetText(dataUrl);
@@ -101,13 +101,13 @@ namespace InstaSpy
 
         private string LoginAndGetMailHtml()
         {
-            var response = _http.Get(MainUrl);
-            var html = response.GetText();
+            var html = _http.GetText(MainUrl);
 
             if (html.Contains($"\"{_userName}\""))
                 return html;
 
-            var token = response.Headers.GetValue("Set-Cookie").First(i => i.StartsWith("csrftoken=")).Substring(10, 32);
+            //var token = response.Headers.GetValue("Set-Cookie").First(i => i.StartsWith("csrftoken=")).Substring(10, 32);
+            var token = Regex.Match(html, @"(?<=""csrf_token"":"")[^""]+(?="")").Value;
             _http.SetHeader("X-CSRFToken", token);
             _http.SetHeader("X-Instagram-AJAX", "1");
 
