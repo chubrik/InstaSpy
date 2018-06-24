@@ -1,10 +1,11 @@
 ﻿using Kit;
 using Kit.Http;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace InstaSpy
 {
@@ -19,6 +20,7 @@ namespace InstaSpy
         private List<string> _previousUrls = new List<string>();
         private readonly HttpClient _http = new HttpClient();
         private int _counter = 0;
+        private string _dataUrl;
 
         public Spy(string userName, string password)
         {
@@ -28,6 +30,12 @@ namespace InstaSpy
 
         public void Run()
         {
+            foreach (var name in FileClient.FileNames(""))
+                FileClient.Delete(name);
+
+            var mainHtml = LoginAndGetMailHtml();
+            _dataUrl = MainUrl + Regex.Match(mainHtml, @"(?<=""preload"" href=""/)[^""]+(?="" as=)").Value;
+
             var nextTime = DateTimeOffset.Now;
 
             while (true)
@@ -43,60 +51,102 @@ namespace InstaSpy
             }
         }
 
+        private Dictionary<string, List<string>> _items = new Dictionary<string, List<string>>();
+
         private void Work()
         {
             LogService.LogInfo($"Step {++_counter}");
-            var mainHtml = LoginAndGetMailHtml();
-            var dataUrl = MainUrl + Regex.Match(mainHtml, @"(?<=""preload"" href=""/)[^""]+(?="" as=)").Value;
-            var data = _http.GetText(dataUrl);
-            var matches = Regex.Matches(data, "\"display_url\": ?\"([^\"]+)\"");
-            var actualUrls = (from Match match in matches select match.Groups[1].Value).Distinct().ToList();
-            var actualNames = actualUrls.Select(PathHelper.FileName).ToList();
-            var capturedUrls = new List<string>();
-            var skipLast = true;
+            var serializedData = _http.GetText(_dataUrl);
+            dynamic data = JsonConvert.DeserializeObject(serializedData);
+            var edges = data["data"]["user"]["edge_web_feed_timeline"]["edges"];
+            var newUrls = new List<string>();
 
-            for (var i = _previousUrls.Count - 1; i >= 0; i--)
+            foreach (var edge in edges)
             {
-                var previousUrl = _previousUrls[i];
-                var previousName = PathHelper.FileName(previousUrl);
+                var node = edge["node"];
+                var code = (string)node["shortcode"];
 
-                if (skipLast)
-                {
-                    if (actualNames.Contains(previousName))
-                        skipLast = false;
-                }
-                else if (!actualNames.Contains(previousName))
-                    capturedUrls.Add(previousUrl);
-            }
-
-            foreach (var actualUrl in actualUrls)
-            {
-                var actualName = PathHelper.FileName(actualUrl);
-
-                if (FileClient.Exists(actualName))
+                if (_items.ContainsKey(code))
                     continue;
 
-                var imageBytes = _http.GetBytes(actualUrl);
-                FileClient.Write(actualName, imageBytes);
+                var names = new List<string>();
+                var children = node["edge_sidecar_to_children"];
+
+                if (children != null)
+                {
+                    var childEdges = children["edges"];
+
+                    foreach (var childEdge in childEdges)
+                    {
+                        var url = (string)childEdge["node"]["display_url"];
+                        newUrls.Add(url);
+                        names.Add(PathHelper.FileName(url));
+                    }
+                }
+                else
+                {
+                    var url = (string)node["display_url"];
+                    newUrls.Add(url);
+                    names.Add(PathHelper.FileName(url));
+                }
+
+                _items[code] = names;
+                var timer = new Timer(5 * 60000); // 5 min
+                timer.Elapsed += (sender, e) => Check(code, timer, 1);
+                timer.AutoReset = false;
+                timer.Start();
             }
 
-            if (capturedUrls.Count > 0)
+            foreach (var newUrl in newUrls)
             {
-                var capturedNames = capturedUrls.Select(PathHelper.FileName).ToList();
+                var name = PathHelper.FileName(newUrl);
 
-                foreach (var capturedName in capturedNames)
-                    LogService.LogSuccess($"Captured: {capturedName}");
-
-                ReportService.Report("InstaSpy captured!", $"Captured photos ({capturedNames.Count}):", capturedNames);
+                if (!FileClient.Exists(name))
+                {
+                    var bytes = _http.GetBytes(newUrl);
+                    FileClient.Write(name, bytes);
+                }
             }
+        }
 
-            var existsNames = FileClient.FileNames();
+        private void Check(string code, Timer timer, int step)
+        {
+            timer.Dispose();
+            var url = $"{MainUrl}p/{code}/";
+            var response = _http.Get(url);
 
-            foreach (var existsName in existsNames)
-                if (!actualNames.Contains(existsName))
-                    FileClient.Delete(existsName);
+            if (response.StatusCode == 200)
+            {
+                if (step == 3)
+                {
+                    foreach (var name in _items[code])
+                        FileClient.Delete(name);
 
-            _previousUrls = actualUrls;
+                    _items.Remove(code);
+                    return;
+                }
+
+                step++;
+
+                var interval = step == 2
+                    ? 55 * 60000 // 55 min
+                    : 11 * 60 * 60000; // 11 hours
+
+                timer = new Timer(interval);
+                timer.Elapsed += (sender, e) => Check(code, timer, step);
+                timer.AutoReset = false;
+                timer.Start();
+            }
+            else
+            {
+                var names = _items[code];
+                ReportService.Report("InstaSpy captured!", $"Captured {names.Count} photos on step {step}:", names);
+
+                foreach (var name in names)
+                    FileClient.Delete(name);
+
+                _items.Remove(code);
+            }
         }
 
         private string LoginAndGetMailHtml()
@@ -106,7 +156,6 @@ namespace InstaSpy
             if (html.Contains($"\"{_userName}\""))
                 return html;
 
-            //var token = response.Headers.GetValue("Set-Cookie").First(i => i.StartsWith("csrftoken=")).Substring(10, 32);
             var token = Regex.Match(html, @"(?<=""csrf_token"":"")[^""]+(?="")").Value;
             _http.SetHeader("X-CSRFToken", token);
             _http.SetHeader("X-Instagram-AJAX", "1");

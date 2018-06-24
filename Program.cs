@@ -1,5 +1,7 @@
-﻿using Kit.Mail;
+﻿using Kit.Http;
+using Kit.Mail;
 using System.IO;
+using System.Linq;
 
 namespace InstaSpy
 {
@@ -7,8 +9,8 @@ namespace InstaSpy
     {
         public static void Main(string[] args)
         {
-            //ConsoleClient.Setup(minLevel: LogLevel.Log);
-            //HttpClient.Setup(cache: CacheMode.WriteOnly);
+            if (args.Any(i => i == "cache"))
+                HttpClient.Setup(cache: CacheMode.WriteOnly);
 
             var instagramCredentials = File.ReadAllLines("instagram-credentials.txt");
             var mailCredentials = File.ReadAllLines("mail-credentials.txt");
