@@ -1,6 +1,5 @@
 ﻿using Kit;
 using Kit.Http;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
@@ -56,8 +55,7 @@ namespace InstaSpy
         private void Work()
         {
             LogService.LogInfo($"Step {++_counter}");
-            var serializedData = _http.GetText(_dataUrl);
-            dynamic data = JsonConvert.DeserializeObject(serializedData);
+            var data = _http.GetJson(_dataUrl);
             var edges = data["data"]["user"]["edge_web_feed_timeline"]["edges"];
             var newUrls = new List<string>();
 
@@ -102,10 +100,8 @@ namespace InstaSpy
                 var name = PathHelper.FileName(newUrl);
 
                 if (!FileClient.Exists(name))
-                {
-                    var bytes = _http.GetBytes(newUrl);
-                    FileClient.Write(name, bytes);
-                }
+                    using (var stream = _http.GetStream(newUrl))
+                        FileClient.Write(name, stream);
             }
         }
 
@@ -151,25 +147,25 @@ namespace InstaSpy
 
         private string LoginAndGetMailHtml()
         {
-            var html = _http.GetText(MainUrl);
+            var mainHtml = _http.GetText(MainUrl);
+            var token = Regex.Match(mainHtml, @"(?<=""csrf_token"":"")[^""]+(?="")").Value;
 
-            if (html.Contains($"\"{_userName}\""))
-                return html;
+            if (token != null)
+            {
+                _http.SetHeader("X-CSRFToken", token);
+                _http.SetHeader("X-Instagram-AJAX", "1");
 
-            var token = Regex.Match(html, @"(?<=""csrf_token"":"")[^""]+(?="")").Value;
-            _http.SetHeader("X-CSRFToken", token);
-            _http.SetHeader("X-Instagram-AJAX", "1");
+                _http.PostForm(LoginUrl,
+                    new Dictionary<string, string> {
+                        { "username", _userName },
+                        { "password", _password }
+                    });
 
-            _http.PostForm(LoginUrl,
-                new Dictionary<string, string> {
-                    { "username", _userName },
-                    { "password", _password }
-                });
+                mainHtml = _http.GetText(MainUrl);
 
-            html = _http.GetText(MainUrl);
-
-            if (html.Contains($"\"{_userName}\""))
-                return html;
+                if (mainHtml.Contains($"\"{_userName}\""))
+                    return mainHtml;
+            }
 
             throw new Exception("Login is failed");
         }
