@@ -15,9 +15,9 @@ namespace InstaSpy
         private readonly string _userName;
         private readonly string _password;
 
-        private readonly TimeSpan _repeatTimeSpan = TimeSpan.FromSeconds(60);
+        private readonly TimeSpan _repeatTimeSpan = TimeSpan.FromSeconds(45);
         private List<string> _previousUrls = new List<string>();
-        private readonly HttpClient _http = new HttpClient();
+        private readonly HttpService _http = new HttpService();
         private int _counter = 0;
         private string _dataUrl;
 

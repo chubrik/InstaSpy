@@ -9,8 +9,11 @@ namespace InstaSpy
     {
         public static void Main(string[] args)
         {
-            if (args.Any(i => i == "cache"))
-                HttpClient.Setup(cache: CacheMode.WriteOnly);
+            if (args.Any(i => i == "debug"))
+            {
+                Kit.Kit.Setup(useFileDiagnostics: true);
+                HttpService.Setup(cache: CacheMode.WriteOnly);
+            }
 
             var instagramCredentials = File.ReadAllLines("instagram-credentials.txt");
             var mailCredentials = File.ReadAllLines("mail-credentials.txt");
